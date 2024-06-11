@@ -24,7 +24,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @CrossOrigin(origins = "*")
-@RequestMapping("/api/gesdoc")
+@RequestMapping("/")
 public class GesdocController {
 	
 	
