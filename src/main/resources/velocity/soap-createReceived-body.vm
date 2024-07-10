@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ser="http://services.ws.sgd.xuecolombia.com/" xmlns:ws="http://ws.gesdoc.co">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <ser:createReceived>
+         <appkey>nXSw+spZBJdPbAZSqnzkF4oMWy4Cmv7cj5Ni0NAAM+4=</appkey>
+         <document>
+            <author>
+               <identification>${headers.author.identification}</identification>
+            </author>
+            <authorDependence>
+               <code>${headers.authorDependence.code}</code>
+            </authorDependence>
+            <type>
+               <id>${headers.type.id}</id>
+            </type>
+            <reference>${headers.reference}</reference>
+            <physicalFolios>1</physicalFolios>
+            <sourceThirdPerson>
+               <identificationType>
+                  <name>${headers.sourceThirdPerson.identificationType.name}</name>
+               </identificationType>
+               <identification>${headers.sourceThirdPerson.identification}</identification>
+               <name>${headers.sourceThirdPerson.name}</name>
+               <lastname>${headers.sourceThirdPerson.lastname}</lastname>
+               <email>${headers.sourceThirdPerson.email}</email>
+               <address>${headers.sourceThirdPerson.address}</address>
+               <phone>${headers.sourceThirdPerson.phone}</phone>
+               <municipality>
+                  <code>${headers.sourceThirdPerson.municipality.code}</code>
+               </municipality>
+            </sourceThirdPerson>
+            <targetDependence>
+               <code>${headers.targetDependence.code}</code>
+            </targetDependence>
+            <targetUser>
+               <identification>${headers.targetUser.identification}</identification>
+            </targetUser>
+            <observations>${headers.observations}</observations>
+            <!--Zero or more repetitions:-->
+            <annexes>
+               <support>
+                  <id>2244</id>
+               </support>
+               <name>${headers.annexes.name}</name>
+               <physicalFolios>1</physicalFolios>
+               <description>${headers.annexes.description}</description>
+               <file>${headers.annexes.file}</file>
+               <fileFormat>${headers.annexes.fileFormat}</fileFormat>
+            </annexes>
+         </document>
+      </ser:createReceived>
+   </soapenv:Body>
+</soapenv:Envelope>
