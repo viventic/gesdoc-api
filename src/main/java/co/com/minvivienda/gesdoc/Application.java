@@ -34,21 +34,21 @@ import org.springframework.stereotype.Component;
 import co.com.minvivienda.middleware.exception.ServiceException;
 
 @SpringBootApplication
-// load regular Spring XML file from the classpath that contains the Camel XML DSL
 @ImportResource({"classpath:spring/camel-context.xml"})
 public class Application {
 
 	
 	public static final String OPERATION_NAMESPACE = "http://services.ws.sgd.xuecolombia.com/";
 	
+	
 	public static final String GESDOC_ENDPOINT = "https://pruebas-gesdoc.minvivienda.gov.co";
 	
-    public static final String CXF_ENDPOINT = "cxf://" + GESDOC_ENDPOINT + "/SGD_WS/GESDOC"
+    
+	public static final String CXF_ENDPOINT = "cxf://" + GESDOC_ENDPOINT + "/SGD_WS/GESDOC"
     		+ "?wsdlURL=" + GESDOC_ENDPOINT + "/SGD_WS/GESDOC?wsdl"
     		+ "&serviceName={" + OPERATION_NAMESPACE + "}GESDOC"
     		+ "&dataFormat=MESSAGE"
     		+ "&endpointName={" + OPERATION_NAMESPACE + "}GESDOCPort";
-
     
     
     /**
@@ -61,6 +61,9 @@ public class Application {
     @Component
     class RestApi extends RouteBuilder {
 
+    	/**
+    	 * 
+    	 */
         @Override
         public void configure() {
             restConfiguration()
@@ -143,7 +146,7 @@ public class Application {
                 	//ITERAR ANEXOS QUE LLEGAN COMO ARCHIVOS ADJUNTOS EN LA PETICION Y CONVERTIRLOS EN BASE64
                 	//GENERAR <annexes> PARA REEMPLAZAR EN LA PLANTILLA soap-createReceived-body.vm
                 	
-                	exchange.getOut().setBody(responseJson);
+                	//exchange.getOut().setBody(responseJson);
                 	
                 })
                 .setHeader("author.identification", jsonpath("$.author.identification"))
@@ -222,6 +225,11 @@ public class Application {
     }
     
     
+    /**
+     * 
+     * @param headers
+     * @return
+     */
     private String extractFilename(String headers) {
         String[] headerLines = headers.split("\r\n");
         for (String line : headerLines) {
@@ -237,6 +245,13 @@ public class Application {
         return null;
     }
     
+    
+    /**
+     * 
+     * @param filename
+     * @param content
+     * @throws IOException
+     */
     private void saveAttachment(String filename, String content) throws IOException {
         // Example: Save attachment content to a file
         String filePath = "attachments/" + filename; // Adjust path as needed
