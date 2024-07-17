@@ -18,19 +18,20 @@ package co.com.minvivienda.gesdoc;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
 
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.cxf.common.message.CxfConstants;
-import org.apache.camel.model.dataformat.JsonLibrary;
 import org.apache.camel.model.rest.RestBindingMode;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.io.FileUtils;
+import org.json.JSONObject;
+import org.json.XML;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.ImportResource;
 import org.springframework.stereotype.Component;
+
+import co.com.minvivienda.middleware.exception.ServiceException;
 
 @SpringBootApplication
 // load regular Spring XML file from the classpath that contains the Camel XML DSL
@@ -57,8 +58,6 @@ public class Application {
         SpringApplication.run(Application.class, args);
     }
     
-    
-    
     @Component
     class RestApi extends RouteBuilder {
 
@@ -76,35 +75,87 @@ public class Application {
             .component("servlet")
             .bindingMode(RestBindingMode.off);
             
+            onException(ServiceException.class)
+            .handled(true)
+            .onExceptionOccurred(exchange -> {
+            	System.out.println(exchange.getException().toString());
+            	ServiceException ex = exchange.getException(ServiceException.class);
+            	exchange.getOut().setBody(simple("{\"code\":\"" + ex.getCodigoError() + "\",\"errorMessage\":\"" + ex.getMessage() + "\"}"));
+            })
+            .to("direct:errorHandler");
+            
+            // Define error handler route
+            from("direct:errorHandler")
+                .log("Handling error: ${body}");
+            
             rest("/gesdoc")
             	.post("/createReceived")
             	.consumes("multipart/form-data")
             	.produces("application/json")
         		.route().routeId("gesdoc-createReceived")
-        		//.log(">>> createReceived ${body}")
-            	.description("Permite radicar, obtener el número y fecha de radicado de una comunicación externa recibida (ER)")
-            	//.streamCaching("true")
-            	//.marshal().json()
+        		.description("Permite radicar, obtener el número y fecha de radicado de una comunicación externa recibida (ER)")
                 .to("direct:transform")
             .endRest();
-            
-            
 
             
             // Transform and send to SOAP service
             from("direct:transform")
                 .routeId("restToSoapRoute")
-                //.log("Received REST request: ${body}")
+                .process(exchange -> {
+                	// PROCESAR ENTRADA QUE LLEGA EN MULTIPART FORMDATA
+                	
+                	// TOMAR ESTE JSON DESDE EL ARCHIVO ADJUNTO QUE SE ENVIA COMO MULTIPART FORMDATA
+                	String responseJson = "{\n"
+                			+ "   \"author\":{\n"
+                			+ "      \"identification\":\"123\"\n"
+                			+ "   },\n"
+                			+ "   \"authorDependence\":{\n"
+                			+ "      \"code\":\"71301\"\n"
+                			+ "   },\n"
+                			+ "   \"type\":{\n"
+                			+ "      \"id\":\"2563\"\n"
+                			+ "   },\n"
+                			+ "   \"reference\":\"Prueba Cancelación de Gravamenes\",\n"
+                			+ "   \"observations\":\"Correo electrónico - checklist\",\n"
+                			+ "   \"sourceThirdPerson\":{\n"
+                			+ "      \"identificationType\":{\n"
+                			+ "         \"name\":\"CC\"\n"
+                			+ "      },\n"
+                			+ "      \"identification\":\"13511400\",\n"
+                			+ "      \"name\":\"Carlos\",\n"
+                			+ "      \"lastname\":\"Chaparro\",\n"
+                			+ "      \"email\":\"carlos.chaparro@xuecolombia.com\",\n"
+                			+ "      \"address\":\"Cra 20 #45a 33\",\n"
+                			+ "      \"phone\":\"6013401862\",\n"
+                			+ "      \"municipality\":{\n"
+                			+ "         \"code\":\"11001\"\n"
+                			+ "      }\n"
+                			+ "   },\n"
+                			+ "   \"targetDependence\":{\n"
+                			+ "      \"code\":\"71301\"\n"
+                			+ "   },\n"
+                			+ "   \"targetUser\":{\n"
+                			+ "      \"identification\":\"46382722\"\n"
+                			+ "   }\n"
+                			+ "}";
+                	
+                	
+                	//ITERAR ANEXOS QUE LLEGAN COMO ARCHIVOS ADJUNTOS EN LA PETICION Y CONVERTIRLOS EN BASE64
+                	//GENERAR <annexes> PARA REEMPLAZAR EN LA PLANTILLA soap-createReceived-body.vm
+                	
+                	exchange.getOut().setBody(responseJson);
+                	
+                })
+                .setHeader("author.identification", jsonpath("$.author.identification"))
+                .setHeader("anexos", jsonpath("$.anexos"))
                 .toD("velocity:velocity/soap-createReceived-body.vm")
                 .setHeader(CxfConstants.OPERATION_NAME, constant("createReceived"))
                 .setHeader(CxfConstants.OPERATION_NAMESPACE, constant(OPERATION_NAMESPACE))
-                .marshal().json(JsonLibrary.Jackson)
                 .to(CXF_ENDPOINT)
                 .process(exchange -> {
                 	String body = exchange.getIn().getBody(String.class);
-                	//System.out.println(exchange.getIn().getBody(String.class));
-                	//HttpInputStream his = exchange.getIn().getBody();
-                	Map<String, String> response = new HashMap<String, String>();
+                	String responseJson = "{\"filename\": \"$FILE_NAME$\", \"json_result\": $JSON_RESULT$, \"etiqueta\": \"$ETIQUETA$\"}";
+                	
                 	String[] parts = body.split("--");
                 	int parte = 1;
                 	if(parts != null && parts.length > 0) {
@@ -113,9 +164,6 @@ public class Application {
                             if (part.trim().isEmpty() || part.trim().equals("--")) {
                                 continue;
                             }
-                            
-                            System.out.println("*************** PART **********************");
-                            System.out.println("part: " + part.substring(1, 10));
                             
                             // Extract headers and content of each part
                             String[] headersAndContent = part.split("\r\n\r\n", 2);
@@ -126,31 +174,46 @@ public class Application {
                             
                             String headers = headersAndContent[0];
                             String content = headersAndContent[1];
-                            
-                            System.out.println("******* HEADERS *******");
-                            System.out.println("headers: " + headers);
-                            
-                            System.out.println("******* CONTENT *******");
-                            System.out.println("content: " + content.length());
-                            
                             String filename = extractFilename(headers);
-                            System.out.println("****** FILE NAME ********");
-                            System.out.println("filename: " + filename);
                             
                             if(parte == 1) {
-                            	response.put("json_result", content);
+                            	
+                            	if(content != null) {
+	                                try {
+	                                    JSONObject jsonObject = XML.toJSONObject(content);
+	                                    jsonObject = jsonObject.getJSONObject("soap:Envelope");
+	                                    jsonObject = jsonObject.getJSONObject("soap:Body");
+	                                    jsonObject = jsonObject.getJSONObject("ns2:createReceivedResponse");
+	                                    jsonObject = jsonObject.getJSONObject("creation");
+	                                    jsonObject.remove("file");
+	                                    
+	                                    String jsonString = jsonObject.toString(4); // Indent with 4 spaces for readability
+	                                    System.out.println(jsonString);
+	                                    responseJson = responseJson.replace("$JSON_RESULT$", jsonString);
+	                                } catch (Exception e) {
+	                                	responseJson = responseJson.replace("$JSON_RESULT$", "{}");
+	                                    e.printStackTrace();
+	                                }
+                            	}else {
+                            		responseJson = responseJson.replace("$JSON_RESULT$", "{}");
+                            	}
                             }
                             
                             if(parte == 2) {
-                            	response.put("filename", filename);
-                            	response.put("etiqueta", new String(Base64.encodeBase64(content.getBytes())));
+                            	responseJson = responseJson.replace("$FILE_NAME$", filename);
+                            	
+                            	if(content != null) {
+                            		responseJson = responseJson.replace("$ETIQUETA$", new String(Base64.encodeBase64(content.getBytes())));
+                            	}else {
+                            		responseJson = responseJson.replace("$ETIQUETA$", "");
+                            	}
                             }
                             
                             parte++;
                 		}
                 	}
                 	
-                	exchange.getOut().setBody(response);
+                	exchange.getOut().setBody(responseJson);
                 })
                 
                 .setHeader("Content-Type", constant("application/json"))
@@ -173,7 +236,7 @@ public class Application {
         }
         return null;
     }
-
+    
     private void saveAttachment(String filename, String content) throws IOException {
         // Example: Save attachment content to a file
         String filePath = "attachments/" + filename; // Adjust path as needed
