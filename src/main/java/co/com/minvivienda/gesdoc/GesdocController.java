@@ -374,13 +374,15 @@ public class GesdocController {
         try (CloseableHttpResponse gesdocResponse = httpClient.execute(httpPost)) {
         	
         	 int statusCode = gesdocResponse.getStatusLine().getStatusCode();
-        	 if(statusCode != 200) {
+        	 System.out.println("statusCode="+statusCode);
+        	 /*if(statusCode != 200) {
         		 Map<String, String> responseMap = new HashMap<String, String>();
         		 responseMap.put("response", "error");
         		 responseMap.put("message", "");
         		 
-        		 return ResponseEntity.status(HttpStatus.OK).body(response);
-        	 }
+        		 response = GesdocController.convertUsingJackson(new String(contentBytes));
+        		 return ResponseEntity.status(HttpStatus.OK).body("{\"response\":\"error\", \"message\":}");
+        	 }*/
         	
         	org.apache.http.HttpEntity responseEntity = gesdocResponse.getEntity();
         	System.out.println("getMimeType = " + ContentType.get(responseEntity).getMimeType());
@@ -408,8 +410,15 @@ public class GesdocController {
                 		System.out.println("\n **** contentBytes **** \n");
                 		System.out.println(new String(contentBytes));
                 		
-                		System.out.println("\n **** convertUsingJackson **** \n");
-                		response = GesdocController.convertUsingJackson(new String(contentBytes));
+                		if(statusCode == 200) {
+                			System.out.println("\n **** convertUsingJackson **** \n");
+                			response = GesdocController.convertUsingJackson(new String(contentBytes));
+                		}else {
+                			System.out.println("\n **** extractFaultString **** \n");
+                			response = GesdocController.extractFaultString(new String(contentBytes));
+                		}
+                		
+                		
                 		System.out.println(response);
                 	 }
                  }   
@@ -418,11 +427,15 @@ public class GesdocController {
 			e.printStackTrace();
 		}
         
-        
     	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
     
+    /**
+     * 
+     * @param xml
+     * @return
+     */
     public static String convertUsingJackson(String xml) {
         try {
             XmlMapper xmlMapper = new XmlMapper();
@@ -430,6 +443,28 @@ public class GesdocController {
             
             ObjectMapper jsonMapper = new ObjectMapper();
             return jsonMapper.writeValueAsString(node);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+    
+    /**
+     * 
+     * @param xml
+     * @return
+     */
+    public static String extractFaultString(String xml) {
+        try {
+            XmlMapper xmlMapper = new XmlMapper();
+            JsonNode node = xmlMapper.readTree(xml.getBytes());
+            ObjectMapper jsonMapper = new ObjectMapper();
+            String valueAsString = jsonMapper.writeValueAsString(node);
+            Map<String, Map<String, Object>> configReglaMap = jsonMapper.readValue(valueAsString, new TypeReference<Map<String, Map<String, Object>>>(){});            
+            Map<String, Object> body = (Map<String, Object>) configReglaMap.get("Body");
+            Map<String, String> fault = (Map<String, String>) body.get("Fault");
+            ObjectMapper jsonMapper2 = new ObjectMapper();
+            return jsonMapper2.writeValueAsString(fault);
         } catch (Exception e) {
             e.printStackTrace();
             return null;
