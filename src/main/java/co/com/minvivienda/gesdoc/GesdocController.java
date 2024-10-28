@@ -1,10 +1,29 @@
 package co.com.minvivienda.gesdoc;
 
+import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
+import javax.mail.BodyPart;
+import javax.mail.internet.MimeMultipart;
+import javax.mail.util.ByteArrayDataSource;
+import javax.mail.util.SharedByteArrayInputStream;
+
+import org.apache.commons.io.IOUtils;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.entity.ContentType;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
@@ -15,16 +34,19 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.xml.XmlMapper;
+
 @RestController
-@CrossOrigin(origins = "*")
-@RequestMapping("/")
 public class GesdocController {
 	
 	
@@ -291,6 +313,151 @@ public class GesdocController {
     	}
     }
     
+    
+    /**
+     * 
+     * @param jsonRequest
+     * @return
+     * @throws Exception
+     */
+    @PostMapping(value = "/searchDocument", produces = {"application/json"}, consumes = {"application/json"})
+    public ResponseEntity<String> searchDocument(@RequestBody String jsonRequest)  throws Exception {
+    	String response = "";
+    	ObjectMapper mapper = new ObjectMapper();
+    	System.out.println("jsonRequest: " + jsonRequest);
+        
+    	try {
+            mapper.readTree(jsonRequest);
+        } catch (Exception e) {
+        	e.printStackTrace();
+        	return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Los datos de entrada no son correctos");
+        }
+        
+        
+        ObjectMapper objectMapper = new ObjectMapper();
+        Map<String, String> jsonInputMap = null;
+		try {
+			jsonInputMap = objectMapper.readValue(jsonRequest, new TypeReference<Map<String, String>>(){});
+		} catch (JsonProcessingException e) {
+			e.printStackTrace();
+			return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Los datos de entrada no son correctos");
+		}
+		
+		
+		InputStream file = GesdocController.class.getClassLoader()
+				.getResourceAsStream("velocity/soap-searchDocument-body.vm");	
+		
+		Map<String, String> templateValues = new HashMap<String, String>();
+		templateValues.put("trackNumber", jsonInputMap.get("trackNumber"));
+		templateValues.put("identificationType", jsonInputMap.get("identificationType"));
+		templateValues.put("identification", jsonInputMap.get("identification"));
+		
+		String xmlInputBody = templateParser(file);
+        Iterator<Map.Entry<String, String>> it = templateValues.entrySet().iterator();
+        Map.Entry<String, String> pair = null;
+        while (it.hasNext()) {
+            pair = it.next();
+        	Pattern p = Pattern.compile("#\\{"+pair.getKey()+"\\}", Pattern.MULTILINE);
+        	Matcher m = p.matcher(xmlInputBody);
+        	xmlInputBody = m.replaceAll(pair.getValue() == null ? "-" : pair.getValue());
+        }
+		
+        
+        System.out.println("\n ******** xmlInputBody *********\n");
+        System.out.println(xmlInputBody);
+        
+        CloseableHttpClient httpClient = HttpClients.createDefault();
+        HttpPost httpPost = new HttpPost("https://pruebas-gesdoc.minvivienda.gov.co/SGD_WS/GESDOC");
+        StringEntity entity = new StringEntity(xmlInputBody, ContentType.MULTIPART_FORM_DATA);
+        httpPost.setEntity(entity);
+        
+        try (CloseableHttpResponse gesdocResponse = httpClient.execute(httpPost)) {
+        	
+        	 int statusCode = gesdocResponse.getStatusLine().getStatusCode();
+        	 if(statusCode != 200) {
+        		 Map<String, String> responseMap = new HashMap<String, String>();
+        		 responseMap.put("response", "error");
+        		 responseMap.put("message", "");
+        		 
+        		 return ResponseEntity.status(HttpStatus.OK).body(response);
+        	 }
+        	
+        	org.apache.http.HttpEntity responseEntity = gesdocResponse.getEntity();
+        	System.out.println("getMimeType = " + ContentType.get(responseEntity).getMimeType());
+        	if (responseEntity != null && ContentType.get(responseEntity).getMimeType().equals("multipart/related")) {
+        			
+        		byte[] responseBody = IOUtils.toByteArray(responseEntity.getContent());
+                System.out.println("responseBody.length=" + responseBody.length);
+                 
+                InputStream inputStream = new ByteArrayInputStream(responseBody);
+                ByteArrayDataSource datasource = new ByteArrayDataSource(inputStream, "multipart/form-data");
+                MimeMultipart multipart = new MimeMultipart(datasource);
+                
+                int count = multipart.getCount();
+                System.out.println("Num partes: " + count);
+                 
+                SharedByteArrayInputStream sbais = null;
+                byte[] contentBytes = null;
+                for (int i = 0; i < count; i++) {
+                	BodyPart bodyPart = multipart.getBodyPart(i);
+                	if (bodyPart.isMimeType("application/xop+xml")) {
+                		
+                		sbais = (SharedByteArrayInputStream) bodyPart.getContent();
+                		contentBytes = new byte[sbais.available()];
+                		sbais.read(contentBytes);
+                		System.out.println("\n **** contentBytes **** \n");
+                		System.out.println(new String(contentBytes));
+                		
+                		System.out.println("\n **** convertUsingJackson **** \n");
+                		response = GesdocController.convertUsingJackson(new String(contentBytes));
+                		System.out.println(response);
+                	 }
+                 }   
+        	 }
+        }catch (Exception e) {
+			e.printStackTrace();
+		}
+        
+        
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+    
+    
+    public static String convertUsingJackson(String xml) {
+        try {
+            XmlMapper xmlMapper = new XmlMapper();
+            JsonNode node = xmlMapper.readTree(xml.getBytes());
+            
+            ObjectMapper jsonMapper = new ObjectMapper();
+            return jsonMapper.writeValueAsString(node);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+    
+    /**
+     * 
+     * @param file
+     * @return
+     */
+	private static String templateParser(InputStream file) {
+		StringBuilder templateContent = new StringBuilder();
+		
+		try {
+			String line = "";
+			BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(file));
+			while ((line = bufferedReader.readLine()) != null) {
+				templateContent.append(line);
+			}
+			
+			bufferedReader.close();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+
+		return templateContent.toString();
+	}
     
     
     

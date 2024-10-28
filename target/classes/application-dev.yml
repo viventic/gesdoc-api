@@ -8,6 +8,14 @@ camel:
         enabled: true
         context-path: /api/*
 
+
+spring:
+  servlet:
+    multipart:
+      enabled: true                  # Enable multipart support
+      max-file-size: 10MB           # Maximum file size
+      max-request-size: 10MB        # Maximum request size
+
 # Binding health checks to a different port
 # change actuator endpoints path
 management:

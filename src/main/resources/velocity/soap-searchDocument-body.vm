@@ -1,0 +1,17 @@
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ser="http://services.ws.sgd.xuecolombia.com/">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <ser:searchDocument>
+         <appkey>nXSw+spZBJdPbAZSqnzkF4oMWy4Cmv7cj5Ni0NAAM+4=</appkey>
+         <searchCriteria>
+            <trackNumber>#{trackNumber}</trackNumber>
+            <sourceThirdPerson>
+               <identificationType>
+                  <id>#{identificationType}</id>
+               </identificationType>
+               <identification>#{identification}</identification>
+            </sourceThirdPerson>
+         </searchCriteria>
+      </ser:searchDocument>
+   </soapenv:Body>
+</soapenv:Envelope>
