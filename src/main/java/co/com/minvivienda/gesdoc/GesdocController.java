@@ -17,6 +17,7 @@ import javax.mail.internet.MimeMultipart;
 import javax.mail.util.ByteArrayDataSource;
 import javax.mail.util.SharedByteArrayInputStream;
 
+import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.io.IOUtils;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpPost;
@@ -322,37 +323,76 @@ public class GesdocController {
      */
     @PostMapping(value = "/searchDocument", produces = {"application/json"}, consumes = {"application/json"})
     public ResponseEntity<String> searchDocument(@RequestBody String jsonRequest)  throws Exception {
-    	String response = "";
-    	ObjectMapper mapper = new ObjectMapper();
-    	System.out.println("jsonRequest: " + jsonRequest);
+    	System.out.println("[searchDocument] jsonRequest: " + jsonRequest);
         
     	try {
+    		ObjectMapper mapper = new ObjectMapper();
             mapper.readTree(jsonRequest);
         } catch (Exception e) {
         	e.printStackTrace();
-        	return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Los datos de entrada no son correctos");
+        	return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("{\"response\":\"error\": \"message\":\"Los datos de entrada no son correctos\"}");
         }
         
+		try {
+			ObjectMapper objectMapper = new ObjectMapper();
+			objectMapper.readValue(jsonRequest, new TypeReference<Map<String, String>>(){});
+		} catch (JsonProcessingException e) {
+			e.printStackTrace();
+			return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("{\"response\":\"error\": \"message\":\"Los datos de entrada no son correctos\"}");
+		}
+		
+    	String seachDocumentJsonResponse = this.callSearchDocument(jsonRequest);
+        Map<String, Object> mapJsonResponse = null;
+		
+        try {
+        	ObjectMapper mapperJsonResponse = new ObjectMapper();
+            mapJsonResponse = mapperJsonResponse.readValue(seachDocumentJsonResponse, HashMap.class);
+        } catch (Exception e) {
+        	e.printStackTrace();
+        	return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("{\"response\":\"error\": \"message\":\"No se pudo leer la respuesta XML de Gesdoc\"}");
+        }
+    	
         
+        Map<String, Object> mapDocumentAnnexResponse = this.callGetDocumentAnnex(jsonRequest);
+        mapJsonResponse.put("annex", mapDocumentAnnexResponse);
+        
+        String jsonResponse = null;
+        try {
+        	ObjectMapper objectMapper = new ObjectMapper();
+            jsonResponse = objectMapper.writeValueAsString(mapJsonResponse);
+        } catch (Exception e) {
+        	jsonResponse = "{\"response\":\"error\": \"message\":\"No fue posible convertir la respuesta a formato JSON\"}";
+            e.printStackTrace();
+        }
+    	
+    	return ResponseEntity.status(HttpStatus.OK).body(jsonResponse);
+    }
+    
+    
+    
+    /**
+     * 
+     * @param jsonRequest
+     * @return
+     */
+    private Map<String, Object> callGetDocumentAnnex(String jsonRequest) {
+    	//String response = "";
+    	HashMap<String, Object> mapMergedResponse = null;
         ObjectMapper objectMapper = new ObjectMapper();
         Map<String, String> jsonInputMap = null;
 		try {
 			jsonInputMap = objectMapper.readValue(jsonRequest, new TypeReference<Map<String, String>>(){});
 		} catch (JsonProcessingException e) {
 			e.printStackTrace();
-			return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Los datos de entrada no son correctos");
+			return null;
 		}
 		
-		
-		InputStream file = GesdocController.class.getClassLoader()
-				.getResourceAsStream("velocity/soap-searchDocument-body.vm");	
+		InputStream file = GesdocController.class.getClassLoader().getResourceAsStream("velocity/soap-getDocumentAnnex-body.vm");
+		String xmlInputBody = templateParser(file);
 		
 		Map<String, String> templateValues = new HashMap<String, String>();
-		templateValues.put("trackNumber", jsonInputMap.get("trackNumber"));
-		templateValues.put("identificationType", jsonInputMap.get("identificationType"));
-		templateValues.put("identification", jsonInputMap.get("identification"));
-		
-		String xmlInputBody = templateParser(file);
+		templateValues.put("idDocument", jsonInputMap.get("trackNumber"));
+		templateValues.put("idType", jsonInputMap.get("idType"));
         Iterator<Map.Entry<String, String>> it = templateValues.entrySet().iterator();
         Map.Entry<String, String> pair = null;
         while (it.hasNext()) {
@@ -363,9 +403,132 @@ public class GesdocController {
         }
 		
         
-        System.out.println("\n ******** xmlInputBody *********\n");
-        System.out.println(xmlInputBody);
-        
+        CloseableHttpClient httpClient = HttpClients.createDefault();
+        HttpPost httpPost = new HttpPost("https://pruebas-gesdoc.minvivienda.gov.co/SGD_WS/GESDOC");
+        StringEntity entity = new StringEntity(xmlInputBody, ContentType.MULTIPART_FORM_DATA);
+        httpPost.setEntity(entity);
+         
+        Map<String, Object> responseMap = null;
+        try (CloseableHttpResponse gesdocResponse = httpClient.execute(httpPost)) {
+        	
+        	 int statusCode = gesdocResponse.getStatusLine().getStatusCode();
+        	 System.out.println("[callGetDocumentAnnex] statusCode="+statusCode);
+        	
+        	org.apache.http.HttpEntity responseEntity = gesdocResponse.getEntity();
+        	
+        	if (responseEntity != null && ContentType.get(responseEntity).getMimeType().equals("multipart/related")) {
+        			
+        		byte[] responseBody = IOUtils.toByteArray(responseEntity.getContent());
+                System.out.println("[callGetDocumentAnnex] Tamanio de la respuesta: " + responseBody.length);
+                
+                InputStream inputStream = new ByteArrayInputStream(responseBody);
+                ByteArrayDataSource datasource = new ByteArrayDataSource(inputStream, "multipart/form-data");
+                MimeMultipart multipart = new MimeMultipart(datasource);
+                
+                int count = multipart.getCount();
+                System.out.println("[callGetDocumentAnnex] Numero de partes en la respuesta: " + count);
+                 
+                SharedByteArrayInputStream sbais = null;
+                byte[] contentBytes = null;
+                String jsonPart = null;
+                BodyPart bodyPart = null;
+                for (int i = 0; i < count; i++) {
+                	jsonPart = null;
+                	bodyPart = multipart.getBodyPart(i);
+                	
+                	//Se obtiene la parte XML de la respuesta que tiene los datos del anexo
+                	if (bodyPart.isMimeType("application/xop+xml")) {
+                		
+                		sbais = (SharedByteArrayInputStream) bodyPart.getContent();
+                		contentBytes = new byte[sbais.available()];
+                		sbais.read(contentBytes);
+                		System.out.println("[callGetDocumentAnnex] Tamanio respuesta XML: " + contentBytes.length);
+                		
+                		if(statusCode == 200) {
+                			jsonPart = GesdocController.xmlToJson(new String(contentBytes));
+                		}else {
+                			jsonPart = GesdocController.extractFaultString(new String(contentBytes));
+                		}
+                		
+                		
+                        try {
+                        	ObjectMapper mapper = new ObjectMapper();
+                            mapMergedResponse = mapper.readValue(jsonPart, HashMap.class);
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                	 }
+                	
+                	
+                	//Se obtiene la parte binaria de la respuesta que tiene el contenido del anexo
+                	if (bodyPart.isMimeType("application/octet-stream")) {
+                		sbais = (SharedByteArrayInputStream) bodyPart.getContent();
+                		contentBytes = new byte[sbais.available()];
+                		sbais.read(contentBytes);
+                		
+                		if(statusCode == 200) {
+                    		System.out.println("[callGetDocumentAnnex] Tamanio del anexo: " + contentBytes.length);
+                    		
+                    		if(mapMergedResponse != null) {
+                                responseMap = (Map<String, Object>) mapMergedResponse.get("Body");
+                                responseMap = (Map<String, Object>) responseMap.get("getDocumentAnnexResponse");
+                                responseMap = (Map<String, Object>) responseMap.get("annex");
+                                responseMap.put("file", new String(Base64.encodeBase64(contentBytes)));
+                    		}
+                    		
+                		}else {
+                			mapMergedResponse.put("annexContent", null);
+                			responseMap = (Map<String, Object>) mapMergedResponse.get("Body");
+                			responseMap.put("file", null);
+                		}
+                	 }
+                 }
+        	}
+        	
+            return responseMap;
+            
+        }catch (Exception e) {
+        	e.printStackTrace();
+			responseMap = new HashMap<String, Object>();
+			responseMap.put("response", "error");
+			responseMap.put("message", "Peticion HTTP abortada");
+			return responseMap;
+		}   
+    }
+    
+    
+    /**
+     * 
+     * @param jsonRequest
+     * @return
+     */
+    private String callSearchDocument(String jsonRequest) {
+    	String response = "";
+    	Map<String, String> jsonInputMap = null;
+		try {
+			ObjectMapper objectMapper = new ObjectMapper();
+			jsonInputMap = objectMapper.readValue(jsonRequest, new TypeReference<Map<String, String>>(){});
+		} catch (JsonProcessingException e) {
+			e.printStackTrace();
+			return null;
+		}
+		
+		InputStream file = GesdocController.class.getClassLoader().getResourceAsStream("velocity/soap-searchDocument-body.vm");
+		String xmlInputBody = templateParser(file);
+		
+		Map<String, String> templateValues = new HashMap<String, String>();
+		templateValues.put("trackNumber", jsonInputMap.get("trackNumber"));
+		templateValues.put("identificationType", jsonInputMap.get("identificationType"));
+		templateValues.put("identification", jsonInputMap.get("identification"));		
+        Iterator<Map.Entry<String, String>> it = templateValues.entrySet().iterator();
+        Map.Entry<String, String> pair = null;
+        while (it.hasNext()) {
+            pair = it.next();
+        	Pattern p = Pattern.compile("#\\{"+pair.getKey()+"\\}", Pattern.MULTILINE);
+        	Matcher m = p.matcher(xmlInputBody);
+        	xmlInputBody = m.replaceAll(pair.getValue() == null ? "-" : pair.getValue());
+        }
+		
         CloseableHttpClient httpClient = HttpClients.createDefault();
         HttpPost httpPost = new HttpPost("https://pruebas-gesdoc.minvivienda.gov.co/SGD_WS/GESDOC");
         StringEntity entity = new StringEntity(xmlInputBody, ContentType.MULTIPART_FORM_DATA);
@@ -374,29 +537,20 @@ public class GesdocController {
         try (CloseableHttpResponse gesdocResponse = httpClient.execute(httpPost)) {
         	
         	 int statusCode = gesdocResponse.getStatusLine().getStatusCode();
-        	 System.out.println("statusCode="+statusCode);
-        	 /*if(statusCode != 200) {
-        		 Map<String, String> responseMap = new HashMap<String, String>();
-        		 responseMap.put("response", "error");
-        		 responseMap.put("message", "");
-        		 
-        		 response = GesdocController.convertUsingJackson(new String(contentBytes));
-        		 return ResponseEntity.status(HttpStatus.OK).body("{\"response\":\"error\", \"message\":}");
-        	 }*/
+        	 System.out.println("[callSearchDocument] statusCode="+statusCode);
         	
         	org.apache.http.HttpEntity responseEntity = gesdocResponse.getEntity();
-        	System.out.println("getMimeType = " + ContentType.get(responseEntity).getMimeType());
         	if (responseEntity != null && ContentType.get(responseEntity).getMimeType().equals("multipart/related")) {
         			
         		byte[] responseBody = IOUtils.toByteArray(responseEntity.getContent());
-                System.out.println("responseBody.length=" + responseBody.length);
-                 
+                System.out.println("[callSearchDocument] Tamanio de la respuesta: " + responseBody.length);
+                
                 InputStream inputStream = new ByteArrayInputStream(responseBody);
                 ByteArrayDataSource datasource = new ByteArrayDataSource(inputStream, "multipart/form-data");
                 MimeMultipart multipart = new MimeMultipart(datasource);
                 
                 int count = multipart.getCount();
-                System.out.println("Num partes: " + count);
+                System.out.println("[callSearchDocument] Numero de partes de la respuesta: " + count);
                  
                 SharedByteArrayInputStream sbais = null;
                 byte[] contentBytes = null;
@@ -407,36 +561,30 @@ public class GesdocController {
                 		sbais = (SharedByteArrayInputStream) bodyPart.getContent();
                 		contentBytes = new byte[sbais.available()];
                 		sbais.read(contentBytes);
-                		System.out.println("\n **** contentBytes **** \n");
-                		System.out.println(new String(contentBytes));
                 		
                 		if(statusCode == 200) {
-                			System.out.println("\n **** convertUsingJackson **** \n");
-                			response = GesdocController.convertUsingJackson(new String(contentBytes));
+                			response = GesdocController.xmlToJson(new String(contentBytes));
                 		}else {
-                			System.out.println("\n **** extractFaultString **** \n");
                 			response = GesdocController.extractFaultString(new String(contentBytes));
                 		}
-                		
-                		
-                		System.out.println(response);
                 	 }
                  }   
         	 }
         }catch (Exception e) {
 			e.printStackTrace();
+			response = "{\"response\":\"error\": \"message\":\"Peticion HTTP abortada\"}";
 		}
         
-    	return ResponseEntity.status(HttpStatus.OK).body(response);
+        return response;
     }
     
-    
     /**
+     * Convierte una cadena en formato XML a formato JSON
      * 
      * @param xml
      * @return
      */
-    public static String convertUsingJackson(String xml) {
+    public static String xmlToJson(String xml) {
         try {
             XmlMapper xmlMapper = new XmlMapper();
             JsonNode node = xmlMapper.readTree(xml.getBytes());
@@ -450,6 +598,7 @@ public class GesdocController {
     }
     
     /**
+     * Extrae el mensaje de fallo (nodo faultstring del XML de respuesta) cuando la busqueda no retorna ningun resultado
      * 
      * @param xml
      * @return
@@ -494,8 +643,12 @@ public class GesdocController {
 		return templateContent.toString();
 	}
     
-    
-    
+    /**
+     * 
+     * @param fileName
+     * @return
+     * @throws IOException
+     */
     public byte[] readImageFromClasspath(String fileName) throws IOException {
         Resource resource = new ClassPathResource(fileName);
         

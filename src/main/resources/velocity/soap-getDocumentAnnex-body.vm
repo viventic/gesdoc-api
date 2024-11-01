@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ser="http://services.ws.sgd.xuecolombia.com/">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <ser:getDocumentAnnex>
+         <appkey>nXSw+spZBJdPbAZSqnzkF4oMWy4Cmv7cj5Ni0NAAM+4=</appkey>
+         <iddocument>
+            <id>#{idDocument}</id>
+            <idtype>#{idType}</idtype>
+         </iddocument>
+      </ser:getDocumentAnnex>
+   </soapenv:Body>
+</soapenv:Envelope>
