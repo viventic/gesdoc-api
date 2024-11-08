@@ -323,7 +323,8 @@ public class GesdocController {
      * @return
      * @throws Exception
      */
-    @PostMapping(value = "/searchDocument", produces = {"application/json"}, consumes = {"application/json"})
+    @CrossOrigin(origins = "*")
+    @PostMapping( value = "/searchDocument", produces = {"application/json"}, consumes = {"application/json"})
     public ResponseEntity<String> searchDocument(@RequestBody String jsonRequest)  throws Exception {
     	System.out.println("[searchDocument] jsonRequest: " + jsonRequest);
         
@@ -367,7 +368,11 @@ public class GesdocController {
             e.printStackTrace();
         }
     	
-    	return ResponseEntity.status(HttpStatus.OK).body(jsonResponse);
+    	//return ResponseEntity.status(HttpStatus.OK).body(jsonResponse);
+        HttpHeaders jsonResponseHeaders = new HttpHeaders();
+        jsonResponseHeaders.set("Access-Control-Allow-Origin", "*");
+        
+    	return new ResponseEntity<String>(jsonResponse, jsonResponseHeaders, HttpStatus.OK);
     }
     
     
