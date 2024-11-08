@@ -368,11 +368,10 @@ public class GesdocController {
             e.printStackTrace();
         }
     	
-    	//return ResponseEntity.status(HttpStatus.OK).body(jsonResponse);
-        HttpHeaders jsonResponseHeaders = new HttpHeaders();
+    	return ResponseEntity.status(HttpStatus.OK).body(jsonResponse);
+        /*HttpHeaders jsonResponseHeaders = new HttpHeaders();
         jsonResponseHeaders.set("Access-Control-Allow-Origin", "*");
-        
-    	return new ResponseEntity<String>(jsonResponse, jsonResponseHeaders, HttpStatus.OK);
+        return new ResponseEntity<String>(jsonResponse, jsonResponseHeaders, HttpStatus.OK);*/
     }
     
     
