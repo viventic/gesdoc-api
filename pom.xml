@@ -166,8 +166,9 @@
 		</dependency>
 
 		<dependency>
-			<groupId>org.apache.httpcomponents</groupId>
-			<artifactId>httpclient</artifactId>
+			<groupId>org.apache.httpcomponents.client5</groupId>
+			<artifactId>httpclient5</artifactId>
+
 		</dependency>
 		<dependency>
 			<groupId>org.apache.httpcomponents</groupId>
@@ -179,27 +180,37 @@
 			<version>1.4</version>
 		</dependency>
 		
-<!-- https://mvnrepository.com/artifact/org.apache.james/apache-mime4j-dom -->
+		
+		<dependency>
+			<groupId>org.apache.httpcomponents.core5</groupId>
+			<artifactId>httpcore5</artifactId>
+		</dependency>
 <dependency>
-    <groupId>org.apache.james</groupId>
-    <artifactId>apache-mime4j-dom</artifactId>
-    <version>0.8.11</version>
+    <groupId>org.apache.httpcomponents</groupId>
+    <artifactId>httpmime</artifactId>
 </dependency>
 
-<!-- https://mvnrepository.com/artifact/org.apache.james/apache-mime4j-core -->
-<dependency>
-    <groupId>org.apache.james</groupId>
-    <artifactId>apache-mime4j-core</artifactId>
-    <version>0.8.11</version>
-</dependency>
+		<!-- https://mvnrepository.com/artifact/org.apache.james/apache-mime4j-dom -->
+		<dependency>
+			<groupId>org.apache.james</groupId>
+			<artifactId>apache-mime4j-dom</artifactId>
+			<version>0.8.11</version>
+		</dependency>
 
-<!-- https://mvnrepository.com/artifact/org.apache.james/apache-mime4j -->
-<dependency>
-    <groupId>org.apache.james</groupId>
-    <artifactId>apache-mime4j</artifactId>
-    <version>0.8.11</version>
-    <type>pom</type>
-</dependency>
+		<!-- https://mvnrepository.com/artifact/org.apache.james/apache-mime4j-core -->
+		<dependency>
+			<groupId>org.apache.james</groupId>
+			<artifactId>apache-mime4j-core</artifactId>
+			<version>0.8.11</version>
+		</dependency>
+
+		<!-- https://mvnrepository.com/artifact/org.apache.james/apache-mime4j -->
+		<dependency>
+			<groupId>org.apache.james</groupId>
+			<artifactId>apache-mime4j</artifactId>
+			<version>0.8.11</version>
+			<type>pom</type>
+		</dependency>
 
 
 	</dependencies>

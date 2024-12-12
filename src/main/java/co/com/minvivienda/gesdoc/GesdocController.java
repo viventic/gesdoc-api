@@ -19,22 +19,18 @@ import javax.mail.util.SharedByteArrayInputStream;
 
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.io.IOUtils;
-import org.apache.http.client.methods.CloseableHttpResponse;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.entity.ContentType;
-import org.apache.http.entity.StringEntity;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClients;
-import org.springframework.core.io.ByteArrayResource;
+import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.client5.http.entity.mime.MultipartEntityBuilder;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.core5.http.ContentType;
+import org.apache.hc.core5.http.HttpEntity;
+import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -48,11 +44,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 
-@CrossOrigin(origins = "*")
+
 @RestController
+//@RequestMapping("/gesdoc")
+@CrossOrigin(origins = "*")
 public class GesdocController {
-	
-	
+
+	/*
     @PostMapping(value = "/mock/createReceived", produces = {"multipart/mixed"}, consumes = {"multipart/form-data"})
     public ResponseEntity<?> createReceived(@RequestParam Map<String, MultipartFile> files)  throws Exception {
     	
@@ -258,63 +256,154 @@ public class GesdocController {
     	}
     }
     
-    
-    
-    @PostMapping(value = "/createReceived", produces = {"multipart/mixed"}, consumes = {"multipart/form-data"})
+  
+ */   
+    @PostMapping(value = "/createReceived", produces = {"application/json"}, consumes = {"multipart/form-data"})
+    @CrossOrigin(origins = "*")
     public ResponseEntity<?> createReceivedReal(@RequestParam Map<String, MultipartFile> files)  throws Exception {
     	
+    	String xmlBody = null;
+    	Map<String, Object> mapJsonResponse = null;
+    	
     	try {
-	    	String fileName = "etiqueta.png";
-	        byte[] etiquetaBytes = readImageFromClasspath(fileName);
-	        System.out.println("etiquetaBytes = " + etiquetaBytes.length);
-	    	if (etiquetaBytes != null && etiquetaBytes.length <= 0) {
-	        	System.out.println("Archivo no existe");
-	            return ResponseEntity.notFound().build();
+            //Se crea la peticion Multipart
+    		MultipartEntityBuilder entityBuilder = MultipartEntityBuilder.create();
+            entityBuilder.setContentType(ContentType.create("multipart/related"));
+            
+	        Iterator<Map.Entry<String, MultipartFile>> it = files.entrySet().iterator();
+	        Map.Entry<String, MultipartFile> multipartFile = null;
+	        
+	        //Se iteran las partes de la peticion para convertir la peticion y enviarla a Gesdoc
+	        while (it.hasNext()) {
+	        	multipartFile = it.next();
+	        	MultipartFile multipartFileValue = multipartFile.getValue();
+	        	String documentJson = new String(multipartFileValue.getBytes());
+	        	
+	        	if(multipartFileValue.getName().equals("document.json") && documentJson != null && !documentJson.isEmpty()) {
+		        	//Se lee el documento adjunto en formato JSON y se convierte a XML para pasarlo al servicio SOAP de Gesdoc
+	        		xmlBody = jsonToXmlBody(documentJson);
+		        	
+	        	}else {
+	        		//Se obteniene el contenido del anexo que se quiere radicar en Gesdoc 
+	        		String originalName = multipartFileValue.getOriginalFilename();
+	        		
+	        		//Se codifica el contenido del anexo en base64 y se pasa a la plantilla XML que se envia en el cuerpo de la peticion hacia Gesdoc 
+	        		String anexoBase64 = new String(Base64.encodeBase64(multipartFileValue.getBytes()));
+	        		xmlBody = xmlBody.replace("#{annexes.file}", anexoBase64);
+	        		xmlBody = xmlBody.replace("#{annexes.description}", originalName);
+	        		xmlBody = xmlBody.replace("#{annexes.name}", originalName);
+	        		
+	        		String[] originalNameSplit = originalName.split("\\.");
+	        		String fileExt = originalNameSplit[originalNameSplit.length-1];
+	        		xmlBody = xmlBody.replace("#{annexes.fileFormat}", fileExt);
+	        		
+	        		//Se agregan las partes (XML y anexo) de la peticion multipart/formdata
+	        		entityBuilder.addTextBody("xmlPart", xmlBody, ContentType.create("text/xml"));
+	        		entityBuilder.addBinaryBody("filePart", multipartFileValue.getBytes(), ContentType.create("application/pdf"), originalName);
+	        	}
 	        }
 	        
-	        ByteArrayResource resource = new ByteArrayResource(etiquetaBytes) {
-	            @Override
-	            public String getFilename() {
-	                return fileName;
-	            }
-	        };
 	        
-	        HttpHeaders jsonResponseHeaders = new HttpHeaders();
-	        jsonResponseHeaders.setContentType(MediaType.APPLICATION_JSON_UTF8);       
-	        jsonResponseHeaders.add(HttpHeaders.TRANSFER_ENCODING, "binary");
-	        jsonResponseHeaders.set("Content-ID", "<root>");
+	        /*try {
+	        	//Se guardar el cuerpo de la peticion en un archivo XML para hacer debug
+	        	Path filePath = Path.of("src/main/resources/xmlbody.xml");
+	            Files.writeString(filePath, xmlBody, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+	        } catch (IOException e) {
+	            e.printStackTrace();
+	        }*/
+			
+	        //Se crea la peticion POST hacia Gesdoc con las diferentes partes del cuerpo de la solicitud
+	        CloseableHttpClient httpClient = HttpClients.createDefault();
+	        HttpPost httpPost = new HttpPost("https://pruebas-gesdoc.minvivienda.gov.co/SGD_WS/GESDOC");
+	        HttpEntity multipartEntity  = entityBuilder.build();
+            httpPost.setEntity(multipartEntity);
+            
+            //System.out.println("*********** PETICION COMPLETA *****************");
+            /*try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
+                multipartEntity.writeTo(outputStream);
+                String requestBody = outputStream.toString("UTF-8");
+                System.out.println("Cuerpo de la solicitud:\n" + requestBody);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }*/
 	        
-	        files = null;
-	        String jsonResponse = "{"
-	        		+ "    \"idelement\": {"
-	        		+ "        \"idtype\": 2,"
-	        		+ "        \"id\": \"2022ER0008851\""
-	        		+ "    },"
-	        		+ "    \"message\": \"Los cambios se realizaron\","
-	        		+ "    \"actionDate\": \"20240611063034-0500\""
-	        		+ "}";
+            //Se envia la peticion a Gesdoc
+            try (CloseableHttpResponse gesdocResponse = httpClient.execute(httpPost)) {
+            	
+            	int statusCode = gesdocResponse.getCode();
+                HttpEntity responseEntity = gesdocResponse.getEntity();
+                byte[] responseBody = IOUtils.toByteArray(responseEntity.getContent());
+                InputStream inputStream = new ByteArrayInputStream(responseBody);
+                
+        		//System.out.println("*********** RESPUESTA COMPLETA *****************");
+        		//System.out.println(new String(responseBody));
+                
+            	if (responseEntity != null) {
+                    ByteArrayDataSource datasource = new ByteArrayDataSource(inputStream, "multipart/form-data");
+                    MimeMultipart multipart = new MimeMultipart(datasource);
+                    
+                    //Numero de partes de la respuesta
+                    int count = multipart.getCount();
+                    SharedByteArrayInputStream sbais = null;
+                    byte[] contentBytes = null;
+                    String response = "";
+                    for (int i = 0; i < count; i++) {
+                    	BodyPart bodyPart = multipart.getBodyPart(i);
+                    	response = "";
+                    	
+                    	//Se obtiene la parte de la respuesta que corresponde al XML que contiene los datos del radicado 
+                    	if (bodyPart.isMimeType("application/xop+xml")) {
+                    		sbais = (SharedByteArrayInputStream) bodyPart.getContent();
+                    		contentBytes = new byte[sbais.available()];
+                    		sbais.read(contentBytes);
+                    		
+                    		//Se convierte la respuesta XML a JSON 
+                    		if(statusCode == 200) {
+                    			response = GesdocController.xmlToJson(new String(contentBytes));
+                    		}else {
+                    			response = GesdocController.extractFaultString(new String(contentBytes));
+                    		}
+                    		
+                            
+                    		try {
+                            	ObjectMapper mapperJsonResponse = new ObjectMapper();
+                                mapJsonResponse = mapperJsonResponse.readValue(response, HashMap.class);
+                            } catch (Exception e) {
+                            	e.printStackTrace();
+                            	return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("{\"response\":\"error\": \"message\":\"No se pudo leer la respuesta XML de Gesdoc\"}");
+                            }
+                    	 }
+                    	
+                    	//Se obtiene la parte de la respuesta que corresponde al contenido de la etiqueda del radicado
+                    	if (bodyPart.isMimeType("application/octet-stream")) {
+                    		sbais = (SharedByteArrayInputStream) bodyPart.getContent();
+                    		contentBytes = new byte[sbais.available()];
+                    		sbais.read(contentBytes);
+                    		mapJsonResponse.put("etiqueta", new String(Base64.encodeBase64(contentBytes)));
+                    	 }
+                     }   
+            	 }
+            }catch(Exception ex) {
+            	ex.printStackTrace();
+            }       
 	        
-	        HttpEntity<String> jsonEntity = new HttpEntity<String>(jsonResponse, jsonResponseHeaders);
-	        HttpHeaders jsonFileHeaders = new HttpHeaders();
-	        jsonFileHeaders.setContentType(MediaType.APPLICATION_OCTET_STREAM);
-	        jsonFileHeaders.add(HttpHeaders.TRANSFER_ENCODING, "binary");
-	        jsonFileHeaders.set("Content-ID", "<etiqueta.png>");
-	        HttpEntity<ByteArrayResource> fileEntity = new HttpEntity<ByteArrayResource>(resource, jsonFileHeaders);
-	        
-	        HttpHeaders headers = new HttpHeaders();
-	        headers.setContentType(MediaType.MULTIPART_MIXED);
-	        
-	        MultiValueMap<String, Object> responseBody = new LinkedMultiValueMap<>();
-	        responseBody.clear();
-	        responseBody.set("root", jsonEntity);
-	        responseBody.set("etiqueta.png", fileEntity);
-	        
-	        return new ResponseEntity<MultiValueMap<String, Object>>(responseBody, headers, HttpStatus.OK);
+            //Se convierte el HashMap a cadena en formato JSON para responder la peticion de este servicio intermediario
+            String jsonResponse = "";
+            try {
+            	ObjectMapper objectMapper = new ObjectMapper();
+                jsonResponse = objectMapper.writeValueAsString(mapJsonResponse);
+            } catch (Exception e) {
+            	jsonResponse = "{\"response\":\"error\": \"message\":\"No fue posible convertir la respuesta a formato JSON\"}";
+                e.printStackTrace();
+            }
+        	
+        	return ResponseEntity.status(HttpStatus.OK).body(jsonResponse);
     	}catch(Exception ex) {
     		ex.printStackTrace();
-    		return new ResponseEntity<String>("EXCEPCION ", HttpStatus.INTERNAL_SERVER_ERROR);
+    		return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("{\"response\":\"error\": \"message\":\"Error interno del servidor\"}");
     	}
     }
+    
     
     
     /**
@@ -417,12 +506,14 @@ public class GesdocController {
         Map<String, Object> responseMap = null;
         try (CloseableHttpResponse gesdocResponse = httpClient.execute(httpPost)) {
         	
-        	 int statusCode = gesdocResponse.getStatusLine().getStatusCode();
+        	 int statusCode = gesdocResponse.getCode();
         	 System.out.println("[callGetDocumentAnnex] statusCode="+statusCode);
         	
-        	org.apache.http.HttpEntity responseEntity = gesdocResponse.getEntity();
+        	HttpEntity responseEntity = gesdocResponse.getEntity();
+        	System.out.println("[callGetDocumentAnnex] contentType="+responseEntity.getContentType());
         	
-        	if (responseEntity != null && ContentType.get(responseEntity).getMimeType().equals("multipart/related")) {
+        	//if (responseEntity != null && ContentType.get(responseEntity).getMimeType().equals("multipart/related")) {
+        	if (responseEntity != null) {
         			
         		byte[] responseBody = IOUtils.toByteArray(responseEntity.getContent());
                 System.out.println("[callGetDocumentAnnex] Tamanio de la respuesta: " + responseBody.length);
@@ -542,11 +633,15 @@ public class GesdocController {
         
         try (CloseableHttpResponse gesdocResponse = httpClient.execute(httpPost)) {
         	
-        	 int statusCode = gesdocResponse.getStatusLine().getStatusCode();
-        	 System.out.println("[callSearchDocument] statusCode="+statusCode);
+        	int statusCode = gesdocResponse.getCode();
+        	System.out.println("[callSearchDocument] statusCode="+statusCode);
         	
-        	org.apache.http.HttpEntity responseEntity = gesdocResponse.getEntity();
-        	if (responseEntity != null && ContentType.get(responseEntity).getMimeType().equals("multipart/related")) {
+        	HttpEntity responseEntity = gesdocResponse.getEntity();
+        	System.out.println("[callSearchDocument] contentType="+responseEntity.getContentType());
+        	
+        	
+        	//if (responseEntity != null && ContentType.get(responseEntity).getMimeType().equals("multipart/related")) {
+        	if (responseEntity != null) {
         			
         		byte[] responseBody = IOUtils.toByteArray(responseEntity.getContent());
                 System.out.println("[callSearchDocument] Tamanio de la respuesta: " + responseBody.length);
@@ -600,6 +695,77 @@ public class GesdocController {
         } catch (Exception e) {
             e.printStackTrace();
             return null;
+        }
+    }
+    
+    
+    
+    public static String jsonToXmlBody(String documentJson) {
+		InputStream file = GesdocController.class.getClassLoader().getResourceAsStream("velocity/soap-createReceived-body2.vm");
+		String xmlInputBody = templateParser(file);
+		
+    	Map<String, String> jsonInputMap =  new HashMap<>();;
+    	
+		try {
+			ObjectMapper objectMapper = new ObjectMapper();
+			JsonNode rootNode = objectMapper.readTree(documentJson);
+	        flattenJson("", rootNode, jsonInputMap);
+		} catch (JsonProcessingException e) {
+			e.printStackTrace();
+			return null;
+		}
+		
+		System.out.println("******* jsonInputMap ********");
+		System.out.println(jsonInputMap);
+		
+		
+		Map<String, String> templateValues = new HashMap<String, String>();
+		templateValues.put("targetDependence.code", (String) jsonInputMap.get("targetDependence.code"));
+		templateValues.put("sourceThirdPerson.identification", (String) jsonInputMap.get("sourceThirdPerson.identification"));
+		templateValues.put("sourceThirdPerson.address", (String) jsonInputMap.get("sourceThirdPerson.address"));
+		templateValues.put("sourceThirdPerson.municipality.code", (String) jsonInputMap.get("sourceThirdPerson.municipality.code"));	                
+		templateValues.put("type.id", (String) jsonInputMap.get("type.id"));
+		templateValues.put("targetUser.identification", (String) jsonInputMap.get("targetUser.identification"));
+		templateValues.put("sourceThirdPerson.name", (String) jsonInputMap.get("sourceThirdPerson.name"));
+		templateValues.put("sourceThirdPerson.lastname", (String) jsonInputMap.get("sourceThirdPerson.lastname"));
+		templateValues.put("sourceThirdPerson.email", (String) jsonInputMap.get("sourceThirdPerson.email"));
+		templateValues.put("reference", (String) jsonInputMap.get("reference"));
+		templateValues.put("observations", (String) jsonInputMap.get("observations"));
+		templateValues.put("authorDependence.code", (String) jsonInputMap.get("authorDependence.code"));
+		templateValues.put("sourceThirdPerson.phone", (String) jsonInputMap.get("sourceThirdPerson.phone"));
+		templateValues.put("author.identification", (String) jsonInputMap.get("author.identification"));
+		templateValues.put("sourceThirdPerson.identificationType.name", (String) jsonInputMap.get("sourceThirdPerson.identificationType.name"));
+		
+		
+		Iterator<Map.Entry<String, String>> itJson = templateValues.entrySet().iterator();
+        Map.Entry<String, String> pair = null;
+        while (itJson.hasNext()) {
+            pair = itJson.next(); 
+        	Pattern p = Pattern.compile("#\\{"+pair.getKey()+"\\}", Pattern.MULTILINE);
+        	Matcher m = p.matcher(xmlInputBody);
+        	xmlInputBody = m.replaceAll(pair.getValue() == null ? "-" : pair.getValue());
+        }
+        
+		return xmlInputBody;
+    }
+    
+    
+    
+    private static void flattenJson(String parentKey, JsonNode node, Map<String, String> result) {
+        if (node.isObject()) {
+            Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
+            while (fields.hasNext()) {
+                Map.Entry<String, JsonNode> field = fields.next();
+                String newKey = parentKey.isEmpty() ? field.getKey() : parentKey + "." + field.getKey();
+                flattenJson(newKey, field.getValue(), result);
+            }
+        } else if (node.isArray()) {
+            for (int i = 0; i < node.size(); i++) {
+                String newKey = parentKey + "[" + i + "]";
+                flattenJson(newKey, node.get(i), result);
+            }
+        } else {
+            result.put(parentKey, node.asText());
         }
     }
     
@@ -658,9 +824,9 @@ public class GesdocController {
     public byte[] readImageFromClasspath(String fileName) throws IOException {
         Resource resource = new ClassPathResource(fileName);
         
-        System.out.println("exists = " + resource.exists());
-        System.out.println("contentLength = " + resource.contentLength());
-        System.out.println(resource.getURI());
+        //System.out.println("exists = " + resource.exists());
+        //System.out.println("contentLength = " + resource.contentLength());
+        //System.out.println(resource.getURI());
         try (InputStream inputStream = resource.getInputStream()) {
             
             ByteArrayOutputStream buffer = new ByteArrayOutputStream();

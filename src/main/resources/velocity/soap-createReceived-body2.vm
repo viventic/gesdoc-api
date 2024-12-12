@@ -6,47 +6,47 @@
          <appkey>nXSw+spZBJdPbAZSqnzkF4oMWy4Cmv7cj5Ni0NAAM+4=</appkey>
          <document>
             <author>
-               <identification>${headers.author.identification}</identification>
+               <identification>#{author.identification}</identification>
             </author>
             <authorDependence>
-               <code>${headers.authorDependence.code}</code>
+               <code>#{authorDependence.code}</code>
             </authorDependence>
             <type>
-               <id>${headers.type.id}</id>
+               <id>#{type.id}</id>
             </type>
-            <reference>${headers.reference}</reference>
+            <reference>#{reference}</reference>
             <physicalFolios>1</physicalFolios>
             <sourceThirdPerson>
                <identificationType>
-                  <name>${headers.sourceThirdPerson.identificationType.name}</name>
+                  <name>#{sourceThirdPerson.identificationType.name}</name>
                </identificationType>
-               <identification>${headers.sourceThirdPerson.identification}</identification>
-               <name>${headers.sourceThirdPerson.name}</name>
-               <lastname>${headers.sourceThirdPerson.lastname}</lastname>
-               <email>${headers.sourceThirdPerson.email}</email>
-               <address>${headers.sourceThirdPerson.address}</address>
-               <phone>${headers.sourceThirdPerson.phone}</phone>
+               <identification>#{sourceThirdPerson.identification}</identification>
+               <name>#{sourceThirdPerson.name}</name>
+               <lastname>#{sourceThirdPerson.lastname}</lastname>
+               <email>#{sourceThirdPerson.email}</email>
+               <address>#{sourceThirdPerson.address}</address>
+               <phone>#{sourceThirdPerson.phone}</phone>
                <municipality>
-                  <code>${headers.sourceThirdPerson.municipality.code}</code>
+                  <code>#{sourceThirdPerson.municipality.code}</code>
                </municipality>
             </sourceThirdPerson>
             <targetDependence>
-               <code>${headers.targetDependence.code}</code>
+               <code>#{targetDependence.code}</code>
             </targetDependence>
             <targetUser>
-               <identification>${headers.targetUser.identification}</identification>
+               <identification>#{targetUser.identification}</identification>
             </targetUser>
-            <observations>${headers.observations}</observations>
+            <observations>#{observations}</observations>
             <!--Zero or more repetitions:-->
             <annexes>
                <support>
                   <id>2244</id>
                </support>
-               <name>${headers.annexes.name}</name>
+               <name>#{annexes.name}</name>
                <physicalFolios>1</physicalFolios>
-               <description>${headers.annexes.description}</description>
-               <file>${headers.annexes.file}</file>
-               <fileFormat>${headers.annexes.fileFormat}</fileFormat>
+               <description>#{annexes.description}</description>
+               <file>#{annexes.file}</file>
+               <fileFormat>#{annexes.fileFormat}</fileFormat>
             </annexes>
          </document>
       </ser:createReceived>
