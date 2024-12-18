@@ -6,8 +6,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -446,7 +448,8 @@ public class GesdocController {
     	
         
         Map<String, Object> mapDocumentAnnexResponse = this.callGetDocumentAnnex(jsonRequest);
-        mapJsonResponse.put("annex", mapDocumentAnnexResponse);
+        List<Map<String, Object>> anexos = (List<Map<String, Object>>) mapDocumentAnnexResponse.get("annex");
+        mapJsonResponse.put("annexes", anexos);
         
         String jsonResponse = null;
         try {
@@ -529,16 +532,19 @@ public class GesdocController {
                 byte[] contentBytes = null;
                 String jsonPart = null;
                 BodyPart bodyPart = null;
+                List<Map<String, Object>> anexos = null;
+                Map<String, Object> annex = null;
                 for (int i = 0; i < count; i++) {
                 	jsonPart = null;
                 	bodyPart = multipart.getBodyPart(i);
                 	
+                	//Contenido multipart
+            		sbais = (SharedByteArrayInputStream) bodyPart.getContent();
+            		contentBytes = new byte[sbais.available()];
+            		sbais.read(contentBytes);
+            		
                 	//Se obtiene la parte XML de la respuesta que tiene los datos del anexo
                 	if (bodyPart.isMimeType("application/xop+xml")) {
-                		
-                		sbais = (SharedByteArrayInputStream) bodyPart.getContent();
-                		contentBytes = new byte[sbais.available()];
-                		sbais.read(contentBytes);
                 		System.out.println("[callGetDocumentAnnex] Tamanio respuesta XML: " + contentBytes.length);
                 		
                 		if(statusCode == 200) {
@@ -558,21 +564,28 @@ public class GesdocController {
                 	
                 	
                 	//Se obtiene la parte binaria de la respuesta que tiene el contenido del anexo
-                	if (bodyPart.isMimeType("application/octet-stream")) {
-                		sbais = (SharedByteArrayInputStream) bodyPart.getContent();
-                		contentBytes = new byte[sbais.available()];
-                		sbais.read(contentBytes);
-                		
+                	if (bodyPart.getDisposition() != null && bodyPart.isMimeType("application/octet-stream")) {
                 		if(statusCode == 200) {
                     		System.out.println("[callGetDocumentAnnex] Tamanio del anexo: " + contentBytes.length);
                     		
                     		if(mapMergedResponse != null) {
                                 responseMap = (Map<String, Object>) mapMergedResponse.get("Body");
                                 responseMap = (Map<String, Object>) responseMap.get("getDocumentAnnexResponse");
-                                responseMap = (Map<String, Object>) responseMap.get("annex");
-                                responseMap.put("file", new String(Base64.encodeBase64(contentBytes)));
+                                
+                                if(responseMap.get("annex") instanceof ArrayList) {
+                                	anexos = (List<Map<String, Object>>) responseMap.get("annex");
+                                	if(anexos != null && !anexos.isEmpty()) {
+                                		annex = anexos.get(i-1);
+                                		annex.put("file", new String(Base64.encodeBase64(contentBytes)));
+                                	}
+                                }else {
+                                	annex = (Map<String, Object>) responseMap.get("annex");
+                                	annex.put("file", new String(Base64.encodeBase64(contentBytes)));
+                                	anexos = new ArrayList<Map<String, Object>>();
+                                	anexos.add(annex);
+                                	responseMap.put("annex", anexos);
+                                }   
                     		}
-                    		
                 		}else {
                 			mapMergedResponse.put("annexContent", null);
                 			responseMap = (Map<String, Object>) mapMergedResponse.get("Body");
